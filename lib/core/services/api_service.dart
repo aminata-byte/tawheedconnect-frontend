@@ -46,6 +46,11 @@ class ApiService {
         'email': email,
       });
 
+      // ✅ AJOUT : Sauvegarder le token si présent
+      if (response.data['token'] != null) {
+        setToken(response.data['token']);
+      }
+
       return response.data;
     } on DioException catch (e) {
       String error = 'Erreur inconnue';
@@ -58,7 +63,7 @@ class ApiService {
     }
   }
 
-  /// Inscription spécifique pour les associations
+  /// Inscription spécifique pour les associations (SANS logo)
   Future<Map<String, dynamic>> registerAssociation({
     required String associationName,
     required String phone,
@@ -67,22 +72,79 @@ class ApiService {
   }) async {
     try {
       final response = await _dio.post('/auth/register', data: {
-        'first_name': associationName,  // Utilisé pour afficher le nom dans le dashboard
+        'first_name': associationName,
         'last_name': 'Association',
         'phone': phone,
         'password': password,
-        'password_confirmation': password, // Laravel attend la confirmation
+        'password_confirmation': password,
         'role': 'association',
         'city': city,
-        'association_name': associationName, // Champ requis par la validation Laravel
+        'association_name': associationName,
       });
+
+      // ✅ AJOUT : Sauvegarder le token si présent
+      if (response.data['token'] != null) {
+        setToken(response.data['token']);
+      }
 
       return response.data;
     } on DioException catch (e) {
       if (e.response != null) {
         final errorData = e.response?.data;
 
-        // Gérer les erreurs de validation Laravel
+        if (errorData['errors'] != null) {
+          final errors = errorData['errors'] as Map<String, dynamic>;
+          final firstError = errors.values.first[0].toString();
+          throw Exception(firstError);
+        }
+
+        throw Exception(errorData['message'] ?? 'Erreur d\'inscription');
+      }
+      throw Exception('Impossible de joindre le serveur. Laravel est lancé ?');
+    }
+  }
+
+  /// Inscription avec logo (MultipartRequest)
+  Future<Map<String, dynamic>> registerAssociationWithLogo({
+    required String associationName,
+    required String phone,
+    required String password,
+    required String city,
+    required String logoPath,
+  }) async {
+    try {
+      FormData formData = FormData.fromMap({
+        'first_name': associationName,
+        'last_name': 'Association',
+        'phone': phone,
+        'password': password,
+        'password_confirmation': password,
+        'role': 'association',
+        'city': city,
+        'association_name': associationName,
+        'logo': await MultipartFile.fromFile(logoPath, filename: 'logo.jpg'),
+      });
+
+      final response = await _dio.post(
+        '/auth/register',
+        data: formData,
+        options: Options(
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        ),
+      );
+
+      // ✅ AJOUT : Sauvegarder le token si présent
+      if (response.data['token'] != null) {
+        setToken(response.data['token']);
+      }
+
+      return response.data;
+    } on DioException catch (e) {
+      if (e.response != null) {
+        final errorData = e.response?.data;
+
         if (errorData['errors'] != null) {
           final errors = errorData['errors'] as Map<String, dynamic>;
           final firstError = errors.values.first[0].toString();
@@ -105,6 +167,11 @@ class ApiService {
         'phone': phone,
         'password': password,
       });
+
+      // ✅ AJOUT CRITIQUE : Sauvegarder le token après login
+      if (response.data['token'] != null) {
+        setToken(response.data['token']);
+      }
 
       return response.data; // Contient success, message, user, token
     } on DioException catch (e) {

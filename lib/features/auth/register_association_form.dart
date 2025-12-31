@@ -279,7 +279,7 @@ class _RegisterAssociationFormState extends State<RegisterAssociationForm> {
     );
   }
 
-  // === INSCRIPTION AVEC LES BONS CHAMPS ===
+  // === INSCRIPTION AVEC OU SANS LOGO ===
   Future<void> _processRegistration() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -295,14 +295,29 @@ class _RegisterAssociationFormState extends State<RegisterAssociationForm> {
       print('📝 Nom association: ${_nameController.text.trim()}');
       print('📞 Téléphone: $formattedPhone');
       print('📍 Ville: ${_cityController.text.trim()}');
+      print('📷 Logo: ${_logoFile != null ? "Oui (${_logoFile!.path})" : "Non"}');
 
-      // IMPORTANT : Envoyer les bons champs selon le backend
-      final response = await api.registerAssociation(
-        associationName: _nameController.text.trim(),
-        phone: formattedPhone,
-        password: _passwordController.text,
-        city: _cityController.text.trim(),
-      );
+      Map<String, dynamic> response;
+
+      // Utiliser la méthode avec logo si un logo est sélectionné
+      if (_logoFile != null) {
+        print('🖼️ Upload avec logo...');
+        response = await api.registerAssociationWithLogo(
+          associationName: _nameController.text.trim(),
+          phone: formattedPhone,
+          password: _passwordController.text,
+          city: _cityController.text.trim(),
+          logoPath: _logoFile!.path,
+        );
+      } else {
+        print('📝 Inscription sans logo...');
+        response = await api.registerAssociation(
+          associationName: _nameController.text.trim(),
+          phone: formattedPhone,
+          password: _passwordController.text,
+          city: _cityController.text.trim(),
+        );
+      }
 
       if (!mounted) return;
 
