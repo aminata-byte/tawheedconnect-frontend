@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../../core/services/api_service.dart';
 import 'association_details_page.dart';
-import 'events_list_page.dart'; // ← Même dossier pages/
-import 'oustaze_questions_page.dart'; // ← Même dossier pages/
-import 'notifications_page.dart'; // ← Même dossier pages/
-
+import 'events_list_page.dart';
+import 'oustaze_questions_page.dart';
+import 'notifications_page.dart';
 import 'urgent_help_page.dart';
-
 import 'member_quests_page.dart';
 
 class MemberHomePage extends StatefulWidget {
@@ -18,6 +17,14 @@ class MemberHomePage extends StatefulWidget {
 
 class _MemberHomePageState extends State<MemberHomePage> {
   final TextEditingController _searchController = TextEditingController();
+  Map<String, dynamic>? userData;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUserData();
+  }
 
   @override
   void dispose() {
@@ -25,376 +32,412 @@ class _MemberHomePageState extends State<MemberHomePage> {
     super.dispose();
   }
 
+  Future<void> _fetchUserData() async {
+    try {
+      final api = ApiService();
+      final response = await api.me();
+
+      if (response['success'] == true && mounted) {
+        setState(() {
+          userData = response['data']['user'];
+          _isLoading = false;
+        });
+
+        print('✅ Données membre: ${userData?['first_name']} ${userData?['last_name']}');
+        print('📍 Ville: ${userData?['city']}');
+      }
+    } catch (e) {
+      print('❌ Erreur: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    // Récupération des données utilisateur
+    final String firstName = userData?['first_name']?.toString() ?? "";
+    final String lastName = userData?['last_name']?.toString() ?? "";
+    final String fullName = '$firstName $lastName'.trim();
+    final String city = userData?['city']?.toString() ?? "Localisation";
+
     return Scaffold(
       backgroundColor: Colors.grey[50],
-      body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            // ==================== HEADER ====================
-            SliverToBoxAdapter(
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [AppColors.primary, AppColors.primary.withOpacity(0.7)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+      body: RefreshIndicator(
+        onRefresh: _fetchUserData,
+        child: SafeArea(
+          child: CustomScrollView(
+            slivers: [
+              // ==================== HEADER ====================
+              SliverToBoxAdapter(
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [AppColors.primary, AppColors.primary.withOpacity(0.7)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
                   ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                "Assalamou Aleykoum 👋",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              const Text(
-                                "Amadou Diallo",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Icon(Icons.location_on, color: Colors.white70, size: 16),
-                                  const SizedBox(width: 4),
-                                  const Text(
-                                    "Dakar, Sénégal",
-                                    style: TextStyle(color: Colors.white70, fontSize: 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  "Assalamou Aleykoum 👋",
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
                                   ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              const Text(
-                                "Découvrez les événements islamiques",
-                                style: TextStyle(color: Colors.white70, fontSize: 14),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.notifications_outlined, color: Colors.white, size: 28),
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (context) => const NotificationsPage()),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    TextField(
-                      controller: _searchController,
-                      decoration: InputDecoration(
-                        hintText: "Rechercher associations, événements...",
-                        prefixIcon: const Icon(Icons.search),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-
-            // ==================== DEMANDE D’AIDE URGENTE ====================
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                child: GestureDetector(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const UrgentHelpPage(),
-                      ),
-                    );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.red.withOpacity(0.3)),
-                    ),
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 24,
-                          backgroundColor: Colors.red.withOpacity(0.15),
-                          child: const Icon(Icons.warning, color: Colors.red, size: 26),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: const [
-                              Text(
-                                "Demande d’aide urgente",
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
                                 ),
-                              ),
-                              SizedBox(height: 4),
-                              Text(
-                                "Maladie, urgence ou situation grave\nContact avant lancement de quête",
-                                style: TextStyle(fontSize: 12, color: Colors.black54),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Icon(Icons.arrow_forward_ios, size: 16),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-            // ==================== QUÊTES SOLIDAIRES ====================
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                child: GestureDetector(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const MemberQuestsPage(),
-                      ),
-                    );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Colors.green.shade400, Colors.green.shade700],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(14),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.green.withOpacity(0.4),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: LinearGradient(
-                              colors: [
-                                Colors.white.withOpacity(0.3),
-                                Colors.greenAccent.withOpacity(0.6)
+                                const SizedBox(height: 8),
+                                Text(
+                                  fullName.isNotEmpty ? fullName : "Membre",
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.location_on, color: Colors.white70, size: 16),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      city,
+                                      style: const TextStyle(color: Colors.white70, fontSize: 14),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                const Text(
+                                  "Découvrez les événements islamiques",
+                                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                                ),
                               ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
                             ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.greenAccent.withOpacity(0.3),
-                                blurRadius: 8,
-                                spreadRadius: 2,
-                              ),
-                            ],
                           ),
-                          child: const Padding(
-                            padding: EdgeInsets.all(8.0),
-                            child: Icon(Icons.volunteer_activism, color: Colors.white, size: 28),
+                          IconButton(
+                            icon: const Icon(Icons.notifications_outlined, color: Colors.white, size: 28),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const NotificationsPage()),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          hintText: "Rechercher associations, événements...",
+                          prefixIcon: const Icon(Icons.search),
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
                           ),
                         ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: const [
-                              Text(
-                                "Quêtes solidaires",
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                  color: Colors.white,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // ==================== DEMANDE D'AIDE URGENTE ====================
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                  child: GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const UrgentHelpPage(),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.red.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 24,
+                            backgroundColor: Colors.red.withOpacity(0.15),
+                            child: const Icon(Icons.warning, color: Colors.red, size: 26),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: const [
+                                Text(
+                                  "Demande d'aide urgente",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
                                 ),
-                              ),
-                              SizedBox(height: 4),
-                              Text(
-                                "Contribuez aux causes importantes\nde vos associations",
-                                style: TextStyle(fontSize: 12, color: Colors.white70),
-                              ),
-                            ],
+                                SizedBox(height: 4),
+                                Text(
+                                  "Maladie, urgence ou situation grave\nContact avant lancement de quête",
+                                  style: TextStyle(fontSize: 12, color: Colors.black54),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.white),
-                      ],
+                          const Icon(Icons.arrow_forward_ios, size: 16),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
 
-            // ==================== ÉVÉNEMENTS À VENIR ====================
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text("📅 Événements à venir", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const EventsListPage()),
-                        );
-                      },
-                      child: const Text("Voir tout"),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 240, // Réduit car plus de bouton
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  itemCount: 5,
-                  itemBuilder: (context, index) {
-                    return _buildEventCard(
-                      title: "Conférence: Le Tawhid",
-                      association: "Association Al-Iman",
-                      date: "Vendredi 20 Déc",
-                      startTime: "15h00",
-                      location: "Grande Mosquée - Dakar",
-                    );
-                  },
-                ),
-              ),
-            ),
-
-            // ==================== ASSOCIATIONS PRÈS DE VOUS ====================
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: const Text("🕌 Associations près de vous", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              ),
-            ),
-
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 140,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  itemCount: 8,
-                  itemBuilder: (context, index) {
-                    final List<String> assocNames = [
-                      "Al-Iman",
-                      "Ansar",
-                      "Taawoun",
-                      "Al-Azhar",
-                      "Darou Salam",
-                      "Ibn Sina",
-                      "Nur",
-                      "Hikma"
-                    ];
-                    final String name = assocNames[index % assocNames.length];
-                    return GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => AssociationDetailsPage(name: name),
+              // ==================== QUÊTES SOLIDAIRES ====================
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                  child: GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const MemberQuestsPage(),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Colors.green.shade400, Colors.green.shade700],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.green.withOpacity(0.4),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
                           ),
-                        );
-                      },
-                      child: _buildAssociationCardHorizontal(name: name),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: LinearGradient(
+                                colors: [
+                                  Colors.white.withOpacity(0.3),
+                                  Colors.greenAccent.withOpacity(0.6)
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.greenAccent.withOpacity(0.3),
+                                  blurRadius: 8,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                            child: const Padding(
+                              padding: EdgeInsets.all(8.0),
+                              child: Icon(Icons.volunteer_activism, color: Colors.white, size: 28),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: const [
+                                Text(
+                                  "Quêtes solidaires",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  "Contribuez aux causes importantes\nde vos associations",
+                                  style: TextStyle(fontSize: 12, color: Colors.white70),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.white),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // ==================== ÉVÉNEMENTS À VENIR ====================
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text("📅 Événements à venir", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const EventsListPage()),
+                          );
+                        },
+                        child: const Text("Voir tout"),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 240,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    itemCount: 5,
+                    itemBuilder: (context, index) {
+                      return _buildEventCard(
+                        title: "Conférence: Le Tawhid",
+                        association: "Association Al-Iman",
+                        date: "Vendredi 20 Déc",
+                        startTime: "15h00",
+                        location: "Grande Mosquée - Dakar",
+                      );
+                    },
+                  ),
+                ),
+              ),
+
+              // ==================== ASSOCIATIONS PRÈS DE VOUS ====================
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: const Text("🕌 Associations près de vous", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+              ),
+
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 140,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    itemCount: 8,
+                    itemBuilder: (context, index) {
+                      final List<String> assocNames = [
+                        "Al-Iman",
+                        "Ansar",
+                        "Taawoun",
+                        "Al-Azhar",
+                        "Darou Salam",
+                        "Ibn Sina",
+                        "Nur",
+                        "Hikma"
+                      ];
+                      final String name = assocNames[index % assocNames.length];
+                      return GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => AssociationDetailsPage(name: name),
+                            ),
+                          );
+                        },
+                        child: _buildAssociationCardHorizontal(name: name),
+                      );
+                    },
+                  ),
+                ),
+              ),
+
+              // ==================== QUESTIONS RÉCENTES ====================
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text("💬 Questions récentes", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const OustazeQuestionsPage()),
+                          );
+                        },
+                        child: const Text("Voir tout"),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                    bool isAnswered = index % 2 == 0;
+
+                    return _buildQuestionCardWithStatus(
+                      question: "Comment faire le wudu correctement ?",
+                      author: "Fatou D.",
+                      time: "Il y a ${index + 1}h",
+                      isAnswered: isAnswered,
+                      oustazeName: isAnswered ? "Cheikh Omar Diallo" : null,
+                      answer: isAnswered
+                          ? "Wa aleykoum salam. Le wudu commence par l'intention, puis laver les mains 3 fois, rincer la bouche et le nez, laver le visage, les bras jusqu'aux coudes, passer la main humide sur la tête, et enfin laver les pieds jusqu'aux chevilles."
+                          : null,
                     );
                   },
+                  childCount: 4,
                 ),
               ),
-            ),
 
-            // ==================== QUESTIONS RÉCENTES ====================
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text("💬 Questions récentes", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const OustazeQuestionsPage()),
-                        );
-                      },
-                      child: const Text("Voir tout"),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                  bool isAnswered = index % 2 == 0;
-
-                  return _buildQuestionCardWithStatus(
-                    question: "Comment faire le wudu correctement ?",
-                    author: "Fatou D.",
-                    time: "Il y a ${index + 1}h",
-                    isAnswered: isAnswered,
-                    oustazeName: isAnswered ? "Cheikh Omar Diallo" : null,
-                    answer: isAnswered
-                        ? "Wa aleykoum salam. Le wudu commence par l'intention, puis laver les mains 3 fois, rincer la bouche et le nez, laver le visage, les bras jusqu'aux coudes, passer la main humide sur la tête, et enfin laver les pieds jusqu'aux chevilles."
-                        : null,
-                  );
-                },
-                childCount: 4,
-              ),
-            ),
-
-            const SliverToBoxAdapter(child: SizedBox(height: 20)),
-          ],
+              const SliverToBoxAdapter(child: SizedBox(height: 20)),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // ======================== CARTE ÉVÉNEMENT (SANS BOUTON S'INSCRIRE) ========================
+  // ======================== CARTE ÉVÉNEMENT ========================
   Widget _buildEventCard({
     required String title,
     required String association,
@@ -452,7 +495,6 @@ class _MemberHomePageState extends State<MemberHomePage> {
                   const SizedBox(width: 4),
                   Expanded(child: Text(location, style: TextStyle(fontSize: 11, color: Colors.grey[600]), maxLines: 1, overflow: TextOverflow.ellipsis)),
                 ]),
-                // Plus de bouton "S'inscrire"
               ],
             ),
           ),
@@ -461,7 +503,7 @@ class _MemberHomePageState extends State<MemberHomePage> {
     );
   }
 
-  // ======================== CARTE ASSOCIATION (CARROUSEL) ========================
+  // ======================== CARTE ASSOCIATION ========================
   Widget _buildAssociationCardHorizontal({required String name}) {
     return Container(
       width: 120,
@@ -495,7 +537,7 @@ class _MemberHomePageState extends State<MemberHomePage> {
     );
   }
 
-  // ======================== QUESTION AVEC STATUT (RÉPONDU / EN ATTENTE) ========================
+  // ======================== CARTE QUESTION ========================
   Widget _buildQuestionCardWithStatus({
     required String question,
     required String author,

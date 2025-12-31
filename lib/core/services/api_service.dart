@@ -229,6 +229,76 @@ class ApiService {
     }
   }
 
+  /// Demande de réinitialisation du code PIN
+  ///
+  /// Envoie une demande pour recevoir un nouveau code PIN par SMS
+  ///
+  /// Paramètre:
+  /// - [phone]: Numéro de téléphone au format +221XXXXXXXXX
+  ///
+  /// Retourne une Map avec:
+  /// - success: bool
+  /// - message: String
+  Future<Map<String, dynamic>> forgotPassword(String phone) async {
+    try {
+      final response = await _dio.post(
+        '/auth/forgot-password',
+        data: {'phone': phone},
+      );
+
+      print('✅ Réponse forgot-password: ${response.data}');
+      return response.data;
+    } on DioException catch (e) {
+      print('❌ Erreur forgot-password: ${e.response?.data}');
+
+      if (e.response?.data != null) {
+        return e.response!.data;
+      }
+
+      return {
+        'success': false,
+        'message': 'Erreur de connexion au serveur'
+      };
+    } catch (e) {
+      print('❌ Exception inattendue: $e');
+      return {
+        'success': false,
+        'message': 'Une erreur est survenue'
+      };
+    }
+  }
+
+  /// Réinitialisation du mot de passe avec le code reçu
+  Future<Map<String, dynamic>> resetPassword({
+    required String phone,
+    required String code,
+    required String password,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/auth/reset-password',
+        data: {
+          'phone': phone,
+          'code': code,
+          'password': password,
+          'password_confirmation': password,
+        },
+      );
+
+      print('✅ Réponse reset-password: ${response.data}');
+      return response.data;
+    } on DioException catch (e) {
+      print('❌ Erreur reset-password: ${e.response?.data}');
+      if (e.response?.data != null) {
+        return e.response!.data;
+      }
+      return {
+        'success': false,
+        'message': 'Erreur de connexion au serveur'
+      };
+    }
+  }
+
   /// Définir le token d'authentification
   void setToken(String token) {
     _dio.options.headers['Authorization'] = 'Bearer $token';
