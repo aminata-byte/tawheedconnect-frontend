@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/colors.dart';
+import '../../core/services/api_service.dart';
+import 'event_model.dart';
 import 'event_add_page.dart';
 
 class EventListPage extends StatefulWidget {
@@ -10,65 +12,75 @@ class EventListPage extends StatefulWidget {
 }
 
 class _EventListPageState extends State<EventListPage> {
-  String _selectedFilter = "all"; // all, active, past
+  String _selectedFilter = "all"; // all | active | past
 
-  // TODO: Remplacer par des vraies données depuis la base de données
-  // Structure basée sur EventAddPage : titre, description, date, heureDebut, heureFin, lieu, intervenants
-  final List<Map<String, dynamic>> _activeEvents = [
-    {
-      'title': 'Conférence: Le Tawhid dans l\'Islam',
-      'description': 'Une conférence approfondie sur l\'unicité d\'Allah et ses implications dans la vie quotidienne...',
-      'date': 'Vendredi 20 Décembre 2024',
-      'startTime': '15:00',
-      'endTime': '17:00',
-      'location': 'Grande Mosquée, Dakar',
-      'speakers': 'Oustaze Cheikh Omar, Imam Diop',
-      'registered': 150,
-      'views': 345,
-      'hasImage': true,
-      'notifyMembers': true,
-      'reminder24h': true,
-      'reminder1h': true,
-      'status': 'active',
-    },
-    {
-      'title': 'Cours de Coran - Tajwid pour débutants',
-      'description': 'Apprentissage des règles de base du Tajwid pour améliorer votre récitation du Coran...',
-      'date': 'Samedi 21 Décembre 2024',
-      'startTime': '10:00',
-      'endTime': '12:00',
-      'location': 'Mosquée Al-Azhar, Médina',
-      'speakers': 'Oustaze Abdoulaye Fall',
-      'registered': 85,
-      'views': 212,
-      'hasImage': false,
-      'notifyMembers': true,
-      'reminder24h': true,
-      'reminder1h': false,
-      'status': 'active',
-    },
-  ];
+  final ApiService _apiService = ApiService();
 
-  final List<Map<String, dynamic>> _pastEvents = [
-    {
-      'title': 'Atelier: Les piliers de l\'Islam',
-      'description': 'Session interactive sur les 5 piliers de l\'Islam avec questions-réponses...',
-      'date': 'Lundi 16 Décembre 2024',
-      'startTime': '14:00',
-      'endTime': '16:30',
-      'location': 'Centre Islamique, Ouakam',
-      'speakers': 'Oustaze Mamadou Seck, Imam Ndiaye',
-      'registered': 92,
-      'rating': 4.8,
-      'hasImage': true,
-      'status': 'past',
-    },
-  ];
+  List<Event> _events = [];
+  bool _isLoading = true;
 
-  List<Map<String, dynamic>> get _filteredEvents {
-    if (_selectedFilter == "active") return _activeEvents;
-    if (_selectedFilter == "past") return _pastEvents;
-    return [..._activeEvents, ..._pastEvents];
+  @override
+  void initState() {
+    super.initState();
+    _loadEvents();
+  }
+
+  Future<void> _loadEvents() async {
+    try {
+      final data = await _apiService.getEvents();
+      setState(() {
+        _events = data.map((e) => Event.fromJson(e)).toList();
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
+      }
+    }
+  }
+
+  // ✅ Détermine si un événement est passé
+  bool _isEventPast(Event event) {
+    try {
+      // On parse la date de l'événement (format: "28 Jan 2026")
+      final parts = event.date.split(' ');
+      if (parts.length != 3) return false;
+
+      final day = int.parse(parts[0]);
+      final months = {
+        'Jan': 1, 'Fév': 2, 'Mar': 3, 'Avr': 4, 'Mai': 5, 'Juin': 6,
+        'Juil': 7, 'Août': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Déc': 12
+      };
+      final month = months[parts[1]] ?? 1;
+      final year = int.parse(parts[2]);
+
+      // Parse l'heure de début
+      final timeParts = event.startTime.split(':');
+      final hour = int.parse(timeParts[0]);
+      final minute = int.parse(timeParts[1]);
+
+      final eventDateTime = DateTime(year, month, day, hour, minute);
+      final now = DateTime.now();
+
+      // L'événement est passé si sa date est avant maintenant
+      return eventDateTime.isBefore(now);
+    } catch (e) {
+      print('❌ Erreur lors de la vérification de la date: $e');
+      return false;
+    }
+  }
+
+  List<Event> get _filteredEvents {
+    if (_selectedFilter == "active") {
+      return _events.where((e) => !_isEventPast(e)).toList();
+    }
+    if (_selectedFilter == "past") {
+      return _events.where((e) => _isEventPast(e)).toList();
+    }
+    return _events;
   }
 
   @override
@@ -79,20 +91,14 @@ class _EventListPageState extends State<EventListPage> {
         backgroundColor: AppColors.primary,
         title: const Text("Mes Événements"),
         elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () {
-              // TODO: Implémenter la recherche
-            },
-          ),
-        ],
       ),
       body: Column(
         children: [
           _buildFilterBar(),
           Expanded(
-            child: _filteredEvents.isEmpty
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _filteredEvents.isEmpty
                 ? _buildEmptyState()
                 : _buildEventsList(),
           ),
@@ -100,16 +106,21 @@ class _EventListPageState extends State<EventListPage> {
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: Colors.orange,
-        onPressed: () {
-          Navigator.push(
+        onPressed: () async {
+          final result = await Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const EventAddPage()),
           );
+          if (result == true) {
+            _loadEvents();
+          }
         },
         child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
+
+  // ================= UI =================
 
   Widget _buildFilterBar() {
     return Container(
@@ -137,328 +148,162 @@ class _EventListPageState extends State<EventListPage> {
     return FilterChip(
       label: Text(label, style: const TextStyle(fontSize: 12)),
       selected: isSelected,
-      onSelected: (selected) {
-        setState(() => _selectedFilter = value);
-      },
+      onSelected: (_) => setState(() => _selectedFilter = value),
       selectedColor: AppColors.primary.withOpacity(0.2),
       checkmarkColor: AppColors.primary,
-      backgroundColor: Colors.grey[200],
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: isSelected ? AppColors.primary : Colors.transparent),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
     );
   }
 
   Widget _buildEmptyState() {
-    return Center(
+    return const Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.event, size: 80, color: Colors.grey[300]),
-          const SizedBox(height: 16),
-          const Text(
-            "Aucun événement",
-            style: TextStyle(fontSize: 18, color: Colors.grey),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            "Ajoutez votre premier événement",
-            style: TextStyle(fontSize: 14, color: Colors.grey),
-          ),
+          Icon(Icons.event, size: 80, color: Colors.grey),
+          SizedBox(height: 16),
+          Text("Aucun événement", style: TextStyle(fontSize: 18, color: Colors.grey)),
         ],
       ),
     );
   }
 
   Widget _buildEventsList() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _filteredEvents.length,
-      itemBuilder: (context, index) {
-        final event = _filteredEvents[index];
-        final isActive = event['status'] == 'active';
+    return RefreshIndicator(
+      onRefresh: _loadEvents,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: _filteredEvents.length,
+        itemBuilder: (context, index) {
+          final Event event = _filteredEvents[index];
+          final bool isPast = _isEventPast(event); // ✅ Vérification dynamique
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Image si disponible
-              if (event['hasImage'] == true)
-                Container(
-                  height: 150,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(12),
-                      topRight: Radius.circular(12),
-                    ),
-                  ),
-                  child: Center(
-                    child: Icon(Icons.image, size: 60, color: Colors.grey[500]),
-                  ),
-                ),
-
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Status badge
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: isActive ? Colors.green : Colors.grey,
-                            borderRadius: BorderRadius.circular(12),
+          return Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (event.image != null && event.image!.isNotEmpty)
+                  ClipRRect(
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                    child: Image.network(
+                      event.image!,
+                      height: 150,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          height: 150,
+                          color: Colors.grey[200],
+                          child: const Center(
+                            child: Icon(Icons.broken_image, size: 50, color: Colors.grey),
                           ),
-                          child: Text(
-                            isActive ? "🟢 EN COURS" : "⚫ TERMINÉ",
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
+                        );
+                      },
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Container(
+                          height: 150,
+                          color: Colors.grey[200],
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              value: loadingProgress.expectedTotalBytes != null
+                                  ? loadingProgress.cumulativeBytesLoaded /
+                                  loadingProgress.expectedTotalBytes!
+                                  : null,
                             ),
                           ),
-                        ),
-                      ],
+                        );
+                      },
                     ),
-                    const SizedBox(height: 12),
+                  ),
 
-                    // Title
-                    Text(
-                      event['title'],
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _statusBadge(isPast), // ✅ Badge dynamique
+                      const SizedBox(height: 12),
+
+                      Text(event.title,
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+
+                      Text(
+                        event.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: Colors.grey[700], fontSize: 13),
                       ),
-                    ),
-                    const SizedBox(height: 8),
+                      const SizedBox(height: 12),
 
-                    // Description (tronquée)
-                    Text(
-                      event['description'],
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.grey[700],
-                        fontSize: 13,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
+                      _infoRow(Icons.calendar_today, event.date),
+                      _infoRow(Icons.access_time,
+                          "${event.startTime}${event.endTime != null ? ' - ${event.endTime}' : ''}"),
+                      _infoRow(Icons.location_on, event.location),
+                      if (event.speakers.isNotEmpty && event.speakers != "Non spécifié")
+                        _infoRow(Icons.person, event.speakers),
 
-                    // Date
-                    Row(
-                      children: [
-                        Icon(Icons.calendar_today, size: 14, color: AppColors.primary),
-                        const SizedBox(width: 6),
-                        Text(
-                          event['date'],
-                          style: const TextStyle(color: Colors.grey, fontSize: 13),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
+                      const SizedBox(height: 12),
+                      const Divider(),
 
-                    // Time
-                    Row(
-                      children: [
-                        Icon(Icons.access_time, size: 14, color: AppColors.primary),
-                        const SizedBox(width: 6),
-                        Text(
-                          "${event['startTime']} - ${event['endTime']}",
-                          style: const TextStyle(color: Colors.grey, fontSize: 13),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-
-                    // Location
-                    Row(
-                      children: [
-                        Icon(Icons.location_on, size: 14, color: AppColors.primary),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            event['location'],
-                            style: const TextStyle(color: Colors.grey, fontSize: 13),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-
-                    // Speakers / Intervenants
-                    Row(
-                      children: [
-                        Icon(Icons.person, size: 14, color: AppColors.primary),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            event['speakers'],
-                            style: const TextStyle(color: Colors.grey, fontSize: 13),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Stats
-                    if (isActive) ...[
                       Row(
                         children: [
-                          const Icon(Icons.people_outline, size: 14, color: Colors.grey),
-                          const SizedBox(width: 6),
-                          Text(
-                            "${event['registered']} inscrits",
-                            style: const TextStyle(color: Colors.grey, fontSize: 13),
-                          ),
-                          const SizedBox(width: 16),
-                          const Icon(Icons.visibility, size: 14, color: Colors.grey),
-                          const SizedBox(width: 6),
-                          Text(
-                            "${event['views']} vues",
-                            style: const TextStyle(color: Colors.grey, fontSize: 13),
-                          ),
+                          if (!isPast) // ✅ Bouton Modifier uniquement si non passé
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text("Modification à venir")),
+                                  );
+                                },
+                                icon: const Icon(Icons.edit, size: 16),
+                                label: const Text("Modifier"),
+                              ),
+                            ),
                         ],
-                      ),
-                    ] else ...[
-                      Row(
-                        children: [
-                          const Icon(Icons.people_outline, size: 14, color: Colors.grey),
-                          const SizedBox(width: 6),
-                          Text(
-                            "${event['registered']} participants",
-                            style: const TextStyle(color: Colors.grey, fontSize: 13),
-                          ),
-                          const SizedBox(width: 16),
-                          const Icon(Icons.star, size: 14, color: Colors.orange),
-                          const SizedBox(width: 6),
-                          Text(
-                            "Note: ${event['rating']}/5",
-                            style: const TextStyle(color: Colors.grey, fontSize: 13),
-                          ),
-                        ],
-                      ),
+                      )
                     ],
-
-                    const SizedBox(height: 12),
-                    const Divider(),
-                    const SizedBox(height: 8),
-
-                    // Action buttons
-                    Row(
-                      children: [
-                        if (isActive) ...[
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () {
-                                // TODO: Modifier l'événement
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(builder: (_) => const EventAddPage()),
-                                );
-                              },
-                              icon: const Icon(Icons.edit, size: 16),
-                              label: const Text("Modifier"),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.primary,
-                                side: BorderSide(color: AppColors.primary),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () {
-                                // TODO: Voir les statistiques
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text("📊 Statistiques de l'événement")),
-                                );
-                              },
-                              icon: const Icon(Icons.bar_chart, size: 16),
-                              label: const Text("Stats"),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.blue,
-                                side: const BorderSide(color: Colors.blue),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            onPressed: () {
-                              _showDeleteDialog(event['title']);
-                            },
-                            icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                          ),
-                        ] else ...[
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () {
-                                // TODO: Voir le rapport
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text("📊 Rapport de l'événement")),
-                                );
-                              },
-                              icon: const Icon(Icons.assessment, size: 16),
-                              label: const Text("Voir rapport"),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.primary,
-                                side: BorderSide(color: AppColors.primary),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-        );
-      },
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
-  void _showDeleteDialog(String eventTitle) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Annuler l'événement"),
-        content: Text("Voulez-vous vraiment annuler '$eventTitle' ?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Non"),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("❌ Événement annulé")),
-              );
-            },
-            child: const Text("Oui, annuler", style: TextStyle(color: Colors.red)),
+  Widget _statusBadge(bool isPast) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: isPast ? Colors.grey : Colors.green,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        isPast ? "⚫ TERMINÉ" : "🟢 EN COURS",
+        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: AppColors.primary),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(text, style: const TextStyle(color: Colors.grey, fontSize: 13)),
           ),
         ],
       ),

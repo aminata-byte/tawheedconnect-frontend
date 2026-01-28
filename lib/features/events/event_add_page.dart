@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../core/constants/colors.dart';
+import '../../core/services/api_service.dart';
 
 class EventAddPage extends StatefulWidget {
   const EventAddPage({Key? key}) : super(key: key);
@@ -19,9 +22,9 @@ class _EventAddPageState extends State<EventAddPage> {
   TimeOfDay? _selectedTime;
   TimeOfDay? _selectedEndTime;
   String? _imagePath;
-  bool _notifyMembers = true;
-  bool _reminder24h = true;
-  bool _reminder1h = true;
+  bool _isPublishing = false;
+
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void dispose() {
@@ -32,6 +35,15 @@ class _EventAddPageState extends State<EventAddPage> {
     super.dispose();
   }
 
+  // --- LOGIQUE ---
+
+  Future<void> _pickImage() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image != null) {
+      setState(() => _imagePath = image.path);
+    }
+  }
+
   Future<void> _selectDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -39,69 +51,69 @@ class _EventAddPageState extends State<EventAddPage> {
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
-    if (picked != null) {
-      setState(() => _selectedDate = picked);
-    }
+    if (picked != null) setState(() => _selectedDate = picked);
   }
 
-  Future<void> _selectTime() async {
+  Future<void> _selectTime(bool isStart) async {
     final picked = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.now(),
     );
     if (picked != null) {
-      setState(() => _selectedTime = picked);
+      setState(() {
+        if (isStart) _selectedTime = picked;
+        else _selectedEndTime = picked;
+      });
     }
   }
 
-  Future<void> _selectEndTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: _selectedTime ?? TimeOfDay.now(),
-    );
-    if (picked != null) {
-      setState(() => _selectedEndTime = picked);
-    }
-  }
+  void _saveEvent() async {
+    if (!_formKey.currentState!.validate()) return;
 
-  void _pickImage() {
-    // TODO: Implémenter la sélection d'image avec image_picker
-    setState(() {
-      _imagePath = "image_placeholder.jpg"; // Simulation
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Image sélectionnée avec succès")),
-    );
-  }
-
-  void _saveEvent() {
-    if (_formKey.currentState!.validate()) {
-      if (_selectedDate == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Veuillez sélectionner une date")),
-        );
-        return;
-      }
-      if (_selectedTime == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Veuillez sélectionner une heure")),
-        );
-        return;
-      }
-
-      // TODO: Sauvegarder l'événement
+    if (_selectedDate == null || _selectedTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("✅ Événement publié avec succès")),
+        const SnackBar(content: Text("Veuillez sélectionner la date et l'heure de début")),
       );
-      Navigator.pop(context);
+      return;
+    }
+
+    setState(() => _isPublishing = true);
+
+    try {
+      // Formatage pour Laravel (YYYY-MM-DD et HH:mm)
+      String formattedDate = "${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}";
+      String startTime = "${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}";
+      String? endTime = _selectedEndTime != null
+          ? "${_selectedEndTime!.hour.toString().padLeft(2, '0')}:${_selectedEndTime!.minute.toString().padLeft(2, '0')}"
+          : null;
+
+      final result = await ApiService().addEvent(
+        title: _titleController.text,
+        description: _descriptionController.text,
+        location: _locationController.text,
+        date: formattedDate,
+        startTime: startTime,
+        endTime: endTime,
+        speakers: _speakersController.text,
+        imagePath: _imagePath,
+      );
+
+      if (result['success']) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("✅ Événement publié avec succès")),
+        );
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("❌ Erreur: ${e.toString()}")),
+      );
+    } finally {
+      setState(() => _isPublishing = false);
     }
   }
 
-  void _saveDraft() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("📝 Brouillon enregistré")),
-    );
-  }
+  // --- INTERFACE ---
 
   @override
   Widget build(BuildContext context) {
@@ -112,136 +124,73 @@ class _EventAddPageState extends State<EventAddPage> {
         title: const Text("Créer un Événement"),
         elevation: 0,
       ),
-      body: SingleChildScrollView(
+      body: _isPublishing
+          ? const Center(child: CircularProgressIndicator(color: Colors.orange))
+          : SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildSectionTitle("📸 MÉDIA"),
+              _buildSectionTitle("📸 IMAGE DE COUVERTURE"),
               const SizedBox(height: 12),
               _buildImagePicker(),
 
               const SizedBox(height: 24),
-              _buildSectionTitle("📝 INFORMATIONS GÉNÉRALES"),
-              const SizedBox(height: 12),
-
+              _buildSectionTitle("📝 DÉTAILS"),
               _buildTextField(
                 controller: _titleController,
                 label: "Titre de l'événement",
-                hint: "Ex: Conférence sur le Tawhid",
                 icon: Icons.title,
                 validator: (v) => v!.isEmpty ? "Titre requis" : null,
               ),
               const SizedBox(height: 16),
-
               _buildTextField(
                 controller: _descriptionController,
                 label: "Description",
-                hint: "Décrivez votre événement...",
                 icon: Icons.description,
-                maxLines: 4,
+                maxLines: 3,
                 validator: (v) => v!.isEmpty ? "Description requise" : null,
               ),
 
               const SizedBox(height: 24),
-              _buildSectionTitle("📅 DATE ET HEURE"),
-              const SizedBox(height: 12),
-
-              _buildDateTimeSelector(),
+              _buildSectionTitle("📅 DATE & HORAIRES"),
+              _buildDateTimeSelectors(),
 
               const SizedBox(height: 24),
               _buildSectionTitle("📍 LIEU"),
-              const SizedBox(height: 12),
-
               _buildTextField(
                 controller: _locationController,
-                label: "Adresse",
-                hint: "Grande Mosquée, Dakar",
+                label: "Adresse (ex: Grande Mosquée Dakar)",
                 icon: Icons.location_on,
                 validator: (v) => v!.isEmpty ? "Lieu requis" : null,
               ),
-              const SizedBox(height: 12),
-
-              OutlinedButton.icon(
-                onPressed: () {
-                  // TODO: Ouvrir la carte pour sélectionner le lieu
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("📍 Choisir sur la carte")),
-                  );
-                },
-                icon: const Icon(Icons.map),
-                label: const Text("Choisir sur la carte"),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 48),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
 
               const SizedBox(height: 24),
-              _buildSectionTitle("👨‍🏫 INTERVENANTS / ANIMATEURS"),
-              const SizedBox(height: 12),
-
+              _buildSectionTitle("👨‍🏫 INTERVENANTS"),
               _buildTextField(
                 controller: _speakersController,
-                label: "Nom des intervenants",
-                hint: "Ex: Oustaze Cheikh Omar, Imam Diop",
+                label: "Noms (séparés par des virgules)",
                 icon: Icons.person,
-                validator: (v) => v!.isEmpty ? "Au moins un intervenant requis" : null,
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                "💡 Séparez les noms par des virgules",
-                style: TextStyle(fontSize: 12, color: Colors.grey),
+                validator: (v) => v!.isEmpty ? "Intervenant requis" : null,
               ),
 
-              const SizedBox(height: 24),
-              _buildSectionTitle("🔔 NOTIFICATIONS"),
-              const SizedBox(height: 12),
-
-              _buildNotificationSettings(),
-
-              const SizedBox(height: 30),
-
-              // Boutons d'action
+              const SizedBox(height: 40),
               SizedBox(
                 width: double.infinity,
+                height: 55,
                 child: ElevatedButton(
                   onPressed: _saveEvent,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.orange,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: const Text(
-                    "✅ PUBLIER L'ÉVÉNEMENT",
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
+                  child: const Text("✅ PUBLIER L'ÉVÉNEMENT",
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
                 ),
               ),
-
-              const SizedBox(height: 12),
-
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: _saveDraft,
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text("Enregistrer comme brouillon"),
-                ),
-              ),
-
-              const SizedBox(height: 20),
+              const SizedBox(height: 30),
             ],
           ),
         ),
@@ -250,13 +199,9 @@ class _EventAddPageState extends State<EventAddPage> {
   }
 
   Widget _buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.bold,
-        color: Colors.grey,
-      ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.grey)),
     );
   }
 
@@ -264,171 +209,57 @@ class _EventAddPageState extends State<EventAddPage> {
     return InkWell(
       onTap: _pickImage,
       child: Container(
-        height: 200,
+        height: 180,
+        width: double.infinity,
         decoration: BoxDecoration(
-          color: _imagePath == null ? Colors.grey[200] : Colors.green[50],
+          color: Colors.grey[200],
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: _imagePath == null ? Colors.grey[400]! : Colors.green,
-            width: 2,
-            style: BorderStyle.solid,
-          ),
+          border: Border.all(color: Colors.grey[300]!),
         ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                _imagePath == null ? Icons.add_photo_alternate : Icons.check_circle,
-                size: 60,
-                color: _imagePath == null ? Colors.grey[600] : Colors.green,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                _imagePath == null ? "📷 Ajouter une image" : "✅ Image ajoutée",
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: _imagePath == null ? Colors.grey[700] : Colors.green,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                _imagePath == null ? "ou une bannière" : "Toucher pour changer",
-                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-              ),
-            ],
-          ),
+        child: _imagePath == null
+            ? const Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.camera_alt, size: 50, color: Colors.grey),
+            Text("Cliquez pour ajouter une affiche", style: TextStyle(color: Colors.grey)),
+          ],
+        )
+            : ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Image.file(File(_imagePath!), fit: BoxFit.cover),
         ),
       ),
     );
   }
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    String? hint,
-    int maxLines = 1,
-    TextInputType? keyboardType,
-    String? Function(String?)? validator,
-  }) {
-    return TextFormField(
-      controller: controller,
-      maxLines: maxLines,
-      keyboardType: keyboardType,
-      validator: validator,
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        prefixIcon: Icon(icon, color: AppColors.primary),
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey[300]!),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: AppColors.primary, width: 2),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDateTimeSelector() {
+  Widget _buildDateTimeSelectors() {
     return Column(
       children: [
-        InkWell(
+        ListTile(
+          tileColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          leading: Icon(Icons.calendar_month, color: AppColors.primary),
+          title: Text(_selectedDate == null ? "Choisir une date" : "${_selectedDate!.day}/${_selectedDate!.month}/${_selectedDate!.year}"),
           onTap: _selectDate,
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[300]!),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.calendar_today, color: AppColors.primary),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _selectedDate == null
-                        ? "📆 Sélectionner la date..."
-                        : "📅 ${_selectedDate!.day}/${_selectedDate!.month}/${_selectedDate!.year}",
-                    style: TextStyle(
-                      color: _selectedDate == null ? Colors.grey : Colors.black,
-                      fontWeight: _selectedDate == null ? FontWeight.normal : FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         Row(
           children: [
             Expanded(
-              child: InkWell(
-                onTap: _selectTime,
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey[300]!),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.access_time, color: AppColors.primary),
-                      const SizedBox(width: 12),
-                      Text(
-                        _selectedTime == null
-                            ? "Début"
-                            : "${_selectedTime!.hour}:${_selectedTime!.minute.toString().padLeft(2, '0')}",
-                        style: TextStyle(
-                          color: _selectedTime == null ? Colors.grey : Colors.black,
-                          fontWeight: _selectedTime == null ? FontWeight.normal : FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              child: ListTile(
+                tileColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                title: Text(_selectedTime == null ? "Début" : _selectedTime!.format(context)),
+                onTap: () => _selectTime(true),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
-              child: InkWell(
-                onTap: _selectEndTime,
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey[300]!),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.access_time_filled, color: AppColors.primary),
-                      const SizedBox(width: 12),
-                      Text(
-                        _selectedEndTime == null
-                            ? "Fin"
-                            : "${_selectedEndTime!.hour}:${_selectedEndTime!.minute.toString().padLeft(2, '0')}",
-                        style: TextStyle(
-                          color: _selectedEndTime == null ? Colors.grey : Colors.black,
-                          fontWeight: _selectedEndTime == null ? FontWeight.normal : FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              child: ListTile(
+                tileColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                title: Text(_selectedEndTime == null ? "Fin" : _selectedEndTime!.format(context)),
+                onTap: () => _selectTime(false),
               ),
             ),
           ],
@@ -437,41 +268,20 @@ class _EventAddPageState extends State<EventAddPage> {
     );
   }
 
-  Widget _buildNotificationSettings() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!),
-      ),
-      child: Column(
-        children: [
-          CheckboxListTile(
-            value: _notifyMembers,
-            onChanged: (val) => setState(() => _notifyMembers = val ?? true),
-            title: const Text("Notifier tous les membres"),
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-            activeColor: AppColors.primary,
-          ),
-          CheckboxListTile(
-            value: _reminder24h,
-            onChanged: (val) => setState(() => _reminder24h = val ?? true),
-            title: const Text("Rappel 24h avant"),
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-            activeColor: AppColors.primary,
-          ),
-          CheckboxListTile(
-            value: _reminder1h,
-            onChanged: (val) => setState(() => _reminder1h = val ?? true),
-            title: const Text("Rappel 1h avant"),
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-            activeColor: AppColors.primary,
-          ),
-        ],
+  Widget _buildTextField({required TextEditingController controller, required String label, required IconData icon, int maxLines = 1, String? Function(String?)? validator}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextFormField(
+        controller: controller,
+        maxLines: maxLines,
+        validator: validator,
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon, color: AppColors.primary),
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+        ),
       ),
     );
   }

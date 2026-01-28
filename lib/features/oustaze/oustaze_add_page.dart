@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/colors.dart';
+import '../../core/services/api_service.dart';
 
 class OustazeAddPage extends StatefulWidget {
-  const OustazeAddPage({Key? key}) : super(key: key);
+  final Map<String, dynamic>? oustaze;
+
+  const OustazeAddPage({Key? key, this.oustaze}) : super(key: key);
 
   @override
   State<OustazeAddPage> createState() => _OustazeAddPageState();
@@ -10,9 +13,34 @@ class OustazeAddPage extends StatefulWidget {
 
 class _OustazeAddPageState extends State<OustazeAddPage> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _specialityController = TextEditingController();
-  final _phoneController = TextEditingController();
+  late TextEditingController _nameController;
+  late TextEditingController _specialityController;
+  late TextEditingController _phoneController;
+
+  bool get isEditing => widget.oustaze != null;
+
+  @override
+  void initState() {
+    super.initState();
+
+    if (isEditing) {
+      final oustaze = widget.oustaze!;
+      // Gère les deux formats : français (nom_complet) et anglais (name)
+      _nameController = TextEditingController(
+          text: oustaze['nom_complet'] ?? oustaze['name'] ?? ''
+      );
+      _specialityController = TextEditingController(
+          text: oustaze['specialites'] ?? oustaze['speciality'] ?? ''
+      );
+      _phoneController = TextEditingController(
+          text: oustaze['telephone'] ?? oustaze['phone'] ?? ''
+      );
+    } else {
+      _nameController = TextEditingController();
+      _specialityController = TextEditingController();
+      _phoneController = TextEditingController();
+    }
+  }
 
   @override
   void dispose() {
@@ -22,13 +50,56 @@ class _OustazeAddPageState extends State<OustazeAddPage> {
     super.dispose();
   }
 
-  void _saveOustaze() {
+  void _saveOustaze() async {
     if (_formKey.currentState!.validate()) {
-      // TODO: Sauvegarder l'oustaze dans la base de données
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("✅ Oustaze ajouté avec succès")),
-      );
-      Navigator.pop(context);
+      try {
+        // Afficher le loader
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(
+              child: CircularProgressIndicator(color: Colors.orange)
+          ),
+        );
+
+        Map<String, dynamic> result;
+
+        if (isEditing) {
+          // APPEL API MODIFICATION
+          result = await ApiService().updateOustaze(
+            id: widget.oustaze!['id'],
+            name: _nameController.text,
+            speciality: _specialityController.text,
+            phone: _phoneController.text,
+          );
+        } else {
+          // APPEL API AJOUT
+          result = await ApiService().addOustaze(
+            name: _nameController.text,
+            speciality: _specialityController.text,
+            phone: _phoneController.text,
+          );
+        }
+
+        if (!mounted) return;
+        Navigator.pop(context); // Fermer le loader
+
+        if (result['success'] == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(isEditing ? "✅ Oustaze mis à jour" : "✅ Oustaze ajouté"),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pop(context, true); // Retour avec succès
+        }
+      } catch (e) {
+        if (!mounted) return;
+        Navigator.pop(context); // Fermer le loader
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Erreur : ${e.toString()}")),
+        );
+      }
     }
   }
 
@@ -38,7 +109,7 @@ class _OustazeAddPageState extends State<OustazeAddPage> {
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
         backgroundColor: AppColors.primary,
-        title: const Text("Ajouter un Oustaze"),
+        title: Text(isEditing ? "Modifier l'Oustaze" : "Ajouter un Oustaze"),
         elevation: 0,
       ),
       body: SingleChildScrollView(
@@ -46,46 +117,30 @@ class _OustazeAddPageState extends State<OustazeAddPage> {
         child: Form(
           key: _formKey,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 20),
-
               _buildTextField(
                 controller: _nameController,
                 label: "Nom complet",
                 icon: Icons.person,
-                hint: "Ex: Cheikh Omar Diallo",
                 validator: (v) => v!.isEmpty ? "Nom requis" : null,
               ),
               const SizedBox(height: 16),
-
               _buildTextField(
                 controller: _specialityController,
-                label: "Spécialité",
+                label: "Spécialité(s)",
                 icon: Icons.book,
-                hint: "Ex: Tafsir, Fiqh, Hadith",
+                hint: "Ex: Fiqh, Tafsir",
                 validator: (v) => v!.isEmpty ? "Spécialité requise" : null,
               ),
-              const SizedBox(height: 8),
-              const Text(
-                "💡 Séparez les spécialités par des virgules",
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-
               const SizedBox(height: 16),
-
               _buildTextField(
                 controller: _phoneController,
                 label: "Téléphone",
                 icon: Icons.phone,
-                hint: "+221 77 123 45 67",
                 keyboardType: TextInputType.phone,
                 validator: (v) => v!.isEmpty ? "Téléphone requis" : null,
               ),
-
               const SizedBox(height: 30),
-
-              // Bouton d'enregistrement
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -94,17 +149,19 @@ class _OustazeAddPageState extends State<OustazeAddPage> {
                     backgroundColor: Colors.orange,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(12)
                     ),
                   ),
-                  child: const Text(
-                    "ENREGISTRER L'OUSTAZE",
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                  child: Text(
+                    isEditing ? "METTRE À JOUR" : "ENREGISTRER",
+                    style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white
+                    ),
                   ),
                 ),
               ),
-
-              const SizedBox(height: 20),
             ],
           ),
         ),
@@ -117,13 +174,11 @@ class _OustazeAddPageState extends State<OustazeAddPage> {
     required String label,
     required IconData icon,
     String? hint,
-    int maxLines = 1,
     TextInputType? keyboardType,
     String? Function(String?)? validator,
   }) {
     return TextFormField(
       controller: controller,
-      maxLines: maxLines,
       keyboardType: keyboardType,
       validator: validator,
       decoration: InputDecoration(
@@ -133,16 +188,16 @@ class _OustazeAddPageState extends State<OustazeAddPage> {
         filled: true,
         fillColor: Colors.white,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey[300]!),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey[300]!)
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: AppColors.primary, width: 2),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: AppColors.primary, width: 2)
         ),
       ),
     );
